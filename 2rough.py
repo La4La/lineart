@@ -69,8 +69,8 @@ def addGaussianNoise(img):
 
 
 
-
-img = cv2.imread('line2.jpg', 0)
+# input
+img = cv2.imread('line.jpg', 0)
 rows, cols = img.shape
 zero = np.zeros(img.shape)
 
@@ -106,4 +106,5 @@ img = addGaussianNoise(img)
 k_size = 3#random.randint(0, 1) * 2 + 1
 out = cv2.GaussianBlur(img, (k_size, k_size), 0)
 
+# output
 cv2.imwrite('img_out.jpg', out)
