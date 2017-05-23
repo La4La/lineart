@@ -8,35 +8,36 @@ import chainer.links as L
 from chainer import cuda, optimizers, serializers, Variable
 from chainer import function
 from chainer.utils import type_check
+import cupy
 
 
 class GEN(chainer.Chain):
 
     def __init__(self):
         super(GEN, self).__init__(
-            dc1=L.Convolution2D(None, 48, 5, 2, 2),
-            fc2=L.Convolution2D(48, 128, 3, 1, 1),
-            fc3=L.Convolution2D(128, 128, 3, 1, 1),
-            dc4=L.Convolution2D(128, 256, 3, 2, 1),
-            fc5=L.Convolution2D(256, 256, 3, 1, 1),
-            fc6=L.Convolution2D(256, 256, 3, 1, 1),
-            dc7=L.Convolution2D(256, 256, 3, 2, 1),
-            fc8=L.Convolution2D(256, 512, 3, 1, 1),
-            fc9=L.Convolution2D(512, 1024, 3, 1, 1),
-            fc10=L.Convolution2D(1024, 1024, 3, 1, 1),
-            fc11=L.Convolution2D(1024, 1024, 3, 1, 1),
-            fc12=L.Convolution2D(1024, 1024, 3, 1, 1),
-            fc13=L.Convolution2D(1024, 512, 3, 1, 1),
-            fc14=L.Convolution2D(512, 256, 3, 1, 1),
-            uc15=L.Deconvolution2D(256, 256, 4, 2, 1),
-            fc16=L.Convolution2D(256, 256, 3, 1, 1),
-            fc17=L.Convolution2D(256, 128, 3, 1, 1),
-            uc18=L.Deconvolution2D(128, 128, 4, 2, 1),
-            fc19=L.Convolution2D(128, 128, 3, 1, 1),
-            fc20=L.Convolution2D(128, 48, 3, 1, 1),
-            uc21=L.Deconvolution2D(48, 48, 4, 2, 1),
-            fc22=L.Convolution2D(48, 24, 3, 1, 1),
-            fc23=L.Convolution2D(24, 1, 3, 1, 1),
+            dc1=L.Convolution2D(None, 48, 5, 2, 2, wscale=0.02*math.sqrt(1*5*5)),
+            fc2=L.Convolution2D(48, 128, 3, 1, 1, wscale=0.02*math.sqrt(48*3*3)),
+            fc3=L.Convolution2D(128, 128, 3, 1, 1, wscale=0.02*math.sqrt(128*3*3)),
+            dc4=L.Convolution2D(128, 256, 3, 2, 1, wscale=0.02*math.sqrt(128*3*3)),
+            fc5=L.Convolution2D(256, 256, 3, 1, 1, wscale=0.02*math.sqrt(256*3*3)),
+            fc6=L.Convolution2D(256, 256, 3, 1, 1, wscale=0.02*math.sqrt(256*3*3)),
+            dc7=L.Convolution2D(256, 256, 3, 2, 1, wscale=0.02*math.sqrt(256*3*3)),
+            fc8=L.Convolution2D(256, 512, 3, 1, 1, wscale=0.02*math.sqrt(256*3*3)),
+            fc9=L.Convolution2D(512, 1024, 3, 1, 1, wscale=0.02*math.sqrt(512*3*3)),
+            fc10=L.Convolution2D(1024, 1024, 3, 1, 1, wscale=0.02*math.sqrt(1024*3*3)),
+            fc11=L.Convolution2D(1024, 1024, 3, 1, 1, wscale=0.02*math.sqrt(1024*3*3)),
+            fc12=L.Convolution2D(1024, 1024, 3, 1, 1, wscale=0.02*math.sqrt(1024*3*3)),
+            fc13=L.Convolution2D(1024, 512, 3, 1, 1, wscale=0.02*math.sqrt(1024*3*3)),
+            fc14=L.Convolution2D(512, 256, 3, 1, 1, wscale=0.02*math.sqrt(512*3*3)),
+            uc15=L.Deconvolution2D(256, 256, 4, 2, 1, wscale=0.02*math.sqrt(256*4*4)),
+            fc16=L.Convolution2D(256, 256, 3, 1, 1, wscale=0.02*math.sqrt(256*3*3)),
+            fc17=L.Convolution2D(256, 128, 3, 1, 1, wscale=0.02*math.sqrt(256*3*3)),
+            uc18=L.Deconvolution2D(128, 128, 4, 2, 1, wscale=0.02*math.sqrt(128*4*4)),
+            fc19=L.Convolution2D(128, 128, 3, 1, 1, wscale=0.02*math.sqrt(128*3*3)),
+            fc20=L.Convolution2D(128, 48, 3, 1, 1, wscale=0.02*math.sqrt(128*3*3)),
+            uc21=L.Deconvolution2D(48, 48, 4, 2, 1, wscale=0.02*math.sqrt(48*4*4)),
+            fc22=L.Convolution2D(48, 24, 3, 1, 1, wscale=0.02*math.sqrt(48*3*3)),
+            fc23=L.Convolution2D(24, 1, 3, 1, 1, wscale=0.02*math.sqrt(24*3*3)),
 
             bn1=L.BatchNormalization(48),
             bn2=L.BatchNormalization(128),
@@ -85,7 +86,7 @@ class GEN(chainer.Chain):
         h = F.relu(self.bn20(self.fc20(h), test=test), use_cudnn)
         h = F.relu(self.bn21(self.uc21(h), test=test), use_cudnn)
         h = F.relu(self.bn22(self.fc22(h), test=test), use_cudnn)
-        h = F.sigmoid(self.fc23(h), use_cudnn)
-        h = Variable(np.where(h.data < 0.9, 0, h.data))
+        h = F.relu(self.fc23(h), use_cudnn)
+        #h = Variable(cupy.where(h.data < 0.9, 0, h.data))
 
         return h

@@ -13,13 +13,13 @@ from chainer.utils import type_check
 class DIS(chainer.Chain):
     def __init__(self):
         super(DIS, self).__init__(
-            c1=L.Convolution2D(1, 16, 5, 2, 2),
-            c2=L.Convolution2D(16, 32, 3, 2, 1),
-            c3=L.Convolution2D(32, 64, 3, 2, 1),
-            c4=L.Convolution2D(64, 128, 3, 2, 1),
-            c5=L.Convolution2D(128, 256, 3, 2, 1),
-            c6=L.Convolution2D(256, 512, 3, 2, 1),
-            c7=L.Linear(None, 1),
+            c1=L.Convolution2D(1, 16, 5, 2, 2, wscale=0.02*math.sqrt(5*5*1)),
+            c2=L.Convolution2D(16, 32, 3, 2, 1, wscale=0.02*math.sqrt(3*3*16)),
+            c3=L.Convolution2D(32, 64, 3, 2, 1, wscale=0.02*math.sqrt(3*3*32)),
+            c4=L.Convolution2D(64, 128, 3, 2, 1, wscale=0.02*math.sqrt(3*3*64)),
+            c5=L.Convolution2D(128, 256, 3, 2, 1, wscale=0.02*math.sqrt(3*3*128)),
+            c6=L.Convolution2D(256, 512, 3, 2, 1, wscale=0.02*math.sqrt(3*3*256)),
+            c7=L.Linear(6*6*512, 2, wscale=0.02*math.sqrt(6*6*512)),
 
             bn1=L.BatchNormalization(16),
             bn2=L.BatchNormalization(32),
@@ -36,6 +36,6 @@ class DIS(chainer.Chain):
         h = F.relu(self.bn4(self.c4(h), test=test))
         h = F.dropout(F.relu(self.bn5(self.c5(h), test=test)), train=not test, ratio=0.5)
         h = F.dropout(F.relu(self.bn6(self.c6(h), test=test)), train=not test, ratio=0.5)
-        h = F.sigmoid(self.c7(h))
+        h = self.c7(h)
 
         return h

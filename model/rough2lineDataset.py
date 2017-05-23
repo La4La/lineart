@@ -16,7 +16,7 @@ import cv2
 
 class Rough2LineDataset(chainer.dataset.DatasetMixin):
 
-    def __init__(self, paths, root1='./input', root2='./terget', dtype=np.float32, leak=(0, 0), root_ref = None, train=False):
+    def __init__(self, paths, root1='./input', root2='./terget', dtype=np.float32, leak=(0, 0), size = 384, root_ref = None, train=False):
         if isinstance(paths, six.string_types):
             with open(paths) as paths_file:
                 paths = [path.strip() for path in paths_file]
@@ -26,6 +26,7 @@ class Rough2LineDataset(chainer.dataset.DatasetMixin):
         self._root_ref = root_ref
         self._dtype = dtype
         self._leak = leak
+        self._size = size
         self._img_dict = {}
         self._train = train
 
@@ -73,22 +74,25 @@ class Rough2LineDataset(chainer.dataset.DatasetMixin):
         # randomly down sampling
         if self._train:
             scale = np.random.choice(range(6,15)) / 6.0
-            if image1.shape[0] // scale >= 384 and image1.shape[1] // scale >= 384:
-                image1 = cv2.resize(image1, (image1.shape[0] // scale, image1.shape[1] // scale))
-                image2 = cv2.resize(image2, (image2.shape[0] // scale, image2.shape[1] // scale))
-            elif image1.shape[0] // scale < 384:
-                image1 = cv2.resize(image1, (384, int(image1.shape[1] / image1.shape[0] * 384)))
-                image2 = cv2.resize(image2, (384, int(image2.shape[1] / image2.shape[0] * 384)))
-            elif image1.shape[1] // scale < 384:
-                image1 = cv2.resize(image1, (int(image1.shape[0] / image1.shape[1] * 384), 384))
-                image2 = cv2.resize(image2, (int(image2.shape[0] / image2.shape[1] * 384), 384))
+            row = int(image1.shape[0] // scale)
+            col = int(image1.shape[1] // scale)
+            if row >= self._size and col >= self._size:
+                image1 = cv2.resize(image1, (row, col))
+                image2 = cv2.resize(image2, (row, col))
+            elif row <= col:
+                image1 = cv2.resize(image1, (self._size, int(col / row * self._size)))
+                image2 = cv2.resize(image2, (self._size, int(col / row * self._size)))
+            elif row > col:
+                image1 = cv2.resize(image1, (int(row / col * self._size), self._size))
+                image2 = cv2.resize(image2, (int(row / col * self._size), self._size))
 
         # randomly crop
         if self._train:
-            x = np.random.randint(0, image1.shape[1] - 383)
-            y = np.random.randint(0, image1.shape[0] - 383)
-            image1 = image1[y:y+384, x:x+384]
-            image2 = image2[y:y+384, x:x+384]
+            #print(image1.shape)
+            x = np.random.randint(0, image1.shape[1] - self._size + 1)
+            y = np.random.randint(0, image1.shape[0] - self._size + 1)
+            image1 = image1[y:y+self._size, x:x+self._size]
+            image2 = image2[y:y+self._size, x:x+self._size]
 
         # add flip
         if self._train:
@@ -100,7 +104,8 @@ class Rough2LineDataset(chainer.dataset.DatasetMixin):
                 image2 = cv2.flip(image2, 0)
 
         image1 = np.asarray(image1, self._dtype)
-        image2 = np.asarray(image2, self._dtype)
+        image2 = np.asarray(image2/255.0, self._dtype)
+        image2 = np.where(image2<0.9, 0, image2)
 
         # replace rough sketches with line arts
         if self._train:

@@ -8,11 +8,22 @@ from chainer import cuda, serializers, Variable
 import chainer.functions as F
 import cv2
 
-def test_samples_simplification(updater, generator, output_path, test_image_path, use_noise=False):
+def test_samples_simplification(updater, generator, output_path, test_image_path, s_size=324, use_noise=False):
     @chainer.training.make_extension()
     def read_img(path):
         image1 = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+
+        if image1.shape[0] < image1.shape[1]:
+            s0 = s_size
+            s1 = int(image1.shape[1] * (s_size / image1.shape[0]))
+            s1 = s1 - s1 % 16
+        else:
+            s1 = s_size
+            s0 = int(image1.shape[0] * (s_size / image1.shape[1]))
+            s0 = s0 - s0 % 16
+
         image1 = np.asarray(image1, np.float32)
+        image1 = cv2.resize(image1, (s1, s0), interpolation=cv2.INTER_AREA)
 
         if image1.ndim == 2:
             image1 = image1[:, :, np.newaxis]
@@ -28,6 +39,7 @@ def test_samples_simplification(updater, generator, output_path, test_image_path
         else:
             array = array.transpose(1, 2, 0)
 
+        array = array * 255
         array = array.clip(0, 255).astype(np.uint8)
         img = cuda.to_cpu(array)
 
@@ -66,6 +78,6 @@ def test_samples_simplification(updater, generator, output_path, test_image_path
         for f in file_test:
             filename = os.path.basename(f)
             filename = os.path.splitext(filename)[0]
-            colorize(f, output_path+"/iter_"+str(trainer.updater.iteration)+"_"+filename+".jpg")
+            simplify(f, output_path+"/iter_"+str(trainer.updater.iteration)+"_"+filename+".jpg")
 
     return samples_simplify

@@ -16,7 +16,6 @@ from chainer.training import extensions
 import argparse
 
 import generator
-import discriminator
 
 from rough2lineDataset import Rough2LineDataset
 from training_visualizer import test_samples_simplification
@@ -36,13 +35,13 @@ def main():
                         help='GPU ID (negative value indicates CPU)')
     parser.add_argument('--dataset', '-i', default='./images/',
                         help='Directory of image files.')
-    parser.add_argument('--out', '-o', default='result',
+    parser.add_argument('--out', '-o', default='result_cnn',
                         help='Directory to output the result')
     parser.add_argument('--resume', '-r', default='',
                         help='Resume the training from snapshot')
     parser.add_argument('--seed', type=int, default=0,
                         help='Random seed')
-    parser.add_argument('--snapshot_interval', type=int, default=5000,
+    parser.add_argument('--snapshot_interval', type=int, default=10000,
                         help='Interval of snapshot')
     parser.add_argument('--display_interval', type=int, default=10,
                         help='Interval of displaying log to console')
@@ -66,9 +65,6 @@ def main():
     serializers.load_npz("result_cnn1/gen_iter_30000", gen)
     print('generator loaded')
 
-    dis = discriminator.DIS()
-    #serializers.load_npz("result1/model_dis_iter_30000", dis)
-
     dataset = Rough2LineDataset(
         "dat/rough_line_train.dat", root + "rough/", root + "line/", train=True,	size = 328)
 
@@ -77,27 +73,22 @@ def main():
     if args.gpu >= 0:
         chainer.cuda.get_device(args.gpu).use()  # Make a specified GPU current
         gen.to_gpu()  # Copy the model to the GPU
-        dis.to_gpu()  # Copy the model to the GPU
 
     # Setup optimizer parameters.
     opt = optimizers.Adam(alpha=0.0001)
     opt.setup(gen)
     opt.add_hook(chainer.optimizer.WeightDecay(1e-5), 'hook_gen')
 
-    opt_d = chainer.optimizers.Adam(alpha=0.0001)
-    opt_d.setup(dis)
-    opt_d.add_hook(chainer.optimizer.WeightDecay(1e-5), 'hook_dec')
 
     # Set up a trainer
-    updater = ganUpdater(
-        models=(gen, dis),
+    updater = cnnUpdater(
+        models=(gen),
         iterator={
             'main': train_iter,
             #'test': test_iter
         },
         optimizer={
-            'gen': opt,
-            'dis': opt_d},
+            'gen': opt,},
         device=args.gpu)
 
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
@@ -108,13 +99,13 @@ def main():
     trainer.extend(extensions.snapshot(), trigger=snapshot_interval2)
     trainer.extend(extensions.snapshot_object(
         gen, 'gen_iter_{.updater.iteration}'), trigger=snapshot_interval)
-    trainer.extend(extensions.snapshot_object(
-        dis, 'gen_dis_iter_{.updater.iteration}'), trigger=snapshot_interval)
+    #trainer.extend(extensions.snapshot_object(
+    #    dis, 'gen_dis_iter_{.updater.iteration}'), trigger=snapshot_interval)
     trainer.extend(extensions.snapshot_object(
         opt, 'optimizer_'), trigger=snapshot_interval)
     trainer.extend(extensions.LogReport(trigger=(10, 'iteration'), ))
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'gen/loss', 'gen/loss_L', 'gen/loss_adv', 'dis/loss', 'dis/loss_fake', 'dis/loss_real']))
+        ['epoch', 'gen/loss', 'gen/loss_L']))
     trainer.extend(extensions.ProgressBar(update_interval=10))
     trainer.extend(test_samples_simplification(updater, gen, args.test_out, args.test_image_path),
                    trigger=(args.test_visual_interval, 'iteration'))
@@ -130,33 +121,22 @@ def main():
     chainer.serializers.save_npz(os.path.join(out, 'optimizer_final'), opt)
 
 
-class ganUpdater(chainer.training.StandardUpdater):
+class cnnUpdater(chainer.training.StandardUpdater):
 
     def __init__(self, *args, **kwargs):
-        self.gen, self.dis = kwargs.pop('models')
+        self.gen = kwargs.pop('models')
         self._iter = 0
-        super(ganUpdater, self).__init__(*args, **kwargs)
+        super(cnnUpdater, self).__init__(*args, **kwargs)
 
         # 0 for dataset
         # 1 for fake
         # G_out: output of Generator
         # gt: ground truth
-    def loss_gen(self, gen, G_out, D_out, gt, batchsize, alpha=0.1):
+    def loss_gen(self, gen, G_out, gt, batchsize, alpha=1):
         xp = self.gen.xp
-        loss_L = F.mean_squared_error(G_out, gt) * G_out.data.shape[0]
-        #print(D_out.data)
-        loss_adv = F.softmax_cross_entropy(D_out, Variable(xp.zeros(batchsize, dtype=np.int32)))
-        #print(loss_adv.data)
-        loss = loss_L + alpha * loss_adv
-        chainer.report({'loss': loss, "loss_L": loss_L, 'loss_adv': loss_adv}, gen)
-        return loss
-
-    def loss_dis(self, dis, G_out, D_out, gt, batchsize, alpha=0.1):
-        xp = self.gen.xp
-        loss_fake = F.softmax_cross_entropy(D_out, Variable(xp.ones(batchsize, dtype=np.int32)))
-        loss_real = F.softmax_cross_entropy(self.dis(gt), Variable(xp.zeros(batchsize, dtype=np.int32)))
-        loss = alpha * (loss_fake + loss_real)
-        chainer.report({'loss': loss, 'loss_fake': loss_fake, 'loss_real':loss_real}, dis)
+        loss_L = F.mean_squared_error(G_out, gt) * G_out.data.size
+        loss = loss_L #+ alpha * loss_adv
+        chainer.report({'loss': loss, "loss_L": loss_L}, gen)
         return loss
 
     def update_core(self):
@@ -177,22 +157,14 @@ class ganUpdater(chainer.training.StandardUpdater):
             gt[i, :] = xp.asarray(batch[i][1])
         x_in = Variable(x_in)
         gt = Variable(gt)
-        #print('gt',gt.data.shape)
-        #print(gt.data[0,:,:,:])
 
         G_out = self.gen(x_in, test=False)
-        #print('G',G_out.data.shape)
-        #print(G_out.data[0,:,:,:])
-
-        D_out = self.dis(G_out, test=False)
-        #print(D_out.data)
 
         gen_optimizer = self.get_optimizer('gen')
-        dis_optimizer = self.get_optimizer('dis')
 
-        gen_optimizer.update(self.loss_gen, self.gen, G_out, D_out, gt, batchsize)
+        gen_optimizer.update(self.loss_gen, self.gen, G_out, gt, batchsize)
         G_out.unchain_backward()
-        dis_optimizer.update(self.loss_dis, self.dis, G_out, D_out, gt, batchsize)
+
 
 if __name__ == '__main__':
     main()
