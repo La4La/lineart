@@ -11,3 +11,4 @@ However, sketchs of the paired sketch-lineart dataset is made by make_rough.py.
 ### results of real sketchs
 ![test4](https://github.com/La4La/lineart/blob/master/real_sketch_result/test4.jpg)
 ![test7](https://github.com/La4La/lineart/blob/master/real_sketch_result/test7.jpg)
+![test3](https://github.com/La4La/lineart/blob/master/real_sketch_result/test3.jpg)
